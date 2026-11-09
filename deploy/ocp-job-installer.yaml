@@ -50,7 +50,7 @@ data:
   # GitHub Repository containing the Ansible Playbooks
   # Update this with your published GitHub repository URL:
   # ----------------------------------------------------------------------------
-  GIT_REPO_URL: "https://github.com/your-org/concert-deployer.git"
+  GIT_REPO_URL: "https://github.com/hardi380/concert-deployer.git"
   GIT_BRANCH: "main"
 
   # Target OpenShift Namespace where IBM Concert will be installed
