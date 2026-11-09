@@ -1,0 +1,54 @@
+---
+# ==============================================================================
+# Playbook: verify_concert.yml
+# Description: Verifies IBM Concert health, OpenShift routes, pods, and components.
+# ==============================================================================
+
+- name: Verify IBM Concert Deployment on OpenShift
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Query Namespace
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Namespace
+        name: "{{ concert_namespace }}"
+      register: ns_info
+
+    - name: Fail if Namespace does not exist
+      ansible.builtin.fail:
+        msg: "Namespace {{ concert_namespace }} does not exist on cluster."
+      when: ns_info.resources | length == 0
+
+    - name: Query All Pods
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Pod
+        namespace: "{{ concert_namespace }}"
+      register: all_pods
+
+    - name: Query OpenShift Routes
+      kubernetes.core.k8s_info:
+        api_version: route.openshift.io/v1
+        kind: Route
+        namespace: "{{ concert_namespace }}"
+      register: all_routes
+
+    - name: Query Admin Secret
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Secret
+        name: "{{ concert_admin_secret_name }}"
+        namespace: "{{ concert_namespace }}"
+      register: admin_sec
+
+    - name: Display Status Report
+      ansible.builtin.debug:
+        msg:
+          - "--- IBM Concert Verification Report ---"
+          - "Namespace: {{ concert_namespace }}"
+          - "Total Pods: {{ all_pods.resources | length }}"
+          - "Running Pods: {{ all_pods.resources | selectattr('status.phase', 'equalto', 'Running') | list | length }}"
+          - "Routes Available: {{ all_routes.resources | map(attribute='spec.host') | list }}"
+          - "Admin Secret Exists: {{ admin_sec.resources | length > 0 }}"

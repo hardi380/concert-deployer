@@ -1,0 +1,26 @@
+---
+# ==============================================================================
+# Playbook: install_concert.yml
+# Description: Fully automated deployment of IBM Concert (Protect, Workflows, DataApps)
+#              on Red Hat OpenShift (OCP).
+# ==============================================================================
+
+- name: Deploy IBM Concert on OpenShift
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  roles:
+    - role: prerequisites
+      tags: [prereqs, prerequisites]
+    - role: ibm_entitlement
+      tags: [entitlement, pull_secret]
+    - role: concert_core
+      tags: [core, concert_core]
+    - role: concert_protect
+      tags: [protect, concert_protect]
+    - role: concert_workflows
+      tags: [workflows, concert_workflows]
+    - role: concert_dataapps
+      tags: [dataapps, concert_dataapps]
+    - role: post_install
+      tags: [post_install, summary]

@@ -1,0 +1,42 @@
+---
+# ==============================================================================
+# Role: concert_protect
+# Tasks: Configures and verifies IBM Concert Protect (Security & Vulnerability)
+# ==============================================================================
+
+- name: Check if Concert Protect is enabled
+  ansible.builtin.debug:
+    msg: "Configuring IBM Concert Protect components..."
+  when: enable_concert_protect
+
+- name: Create Concert Protect ConfigMap for policies and scanner settings
+  kubernetes.core.k8s:
+    api_version: v1
+    kind: ConfigMap
+    name: ibm-concert-protect-config
+    namespace: "{{ concert_namespace }}"
+    state: present
+    definition:
+      metadata:
+        name: ibm-concert-protect-config
+        namespace: "{{ concert_namespace }}"
+        labels:
+          app.kubernetes.io/part-of: ibm-concert
+          app.kubernetes.io/component: protect
+      data:
+        ENABLE_CVE_SCANNING: "true"
+        ENABLE_CODE_REMEDIATION: "true"
+        ENABLE_SECRETS_SCANNING: "true"
+        ENABLE_CONTAINER_PROTECTION: "true"
+        AUTO_ENRICHMENT: "true"
+  when: enable_concert_protect
+
+- name: Verify Concert Protect pods and services
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Pod
+    namespace: "{{ concert_namespace }}"
+    label_selectors:
+      - "app.kubernetes.io/part-of=ibm-concert"
+  register: protect_pods
+  when: enable_concert_protect

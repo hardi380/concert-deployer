@@ -1,0 +1,8 @@
+ansible-core>=2.16.0
+kubernetes>=28.0.0
+openshift>=0.13.2
+pyyaml>=6.0.1
+requests>=2.31.0
+urllib3>=1.26.18
+jmespath>=1.0.1
+cryptography>=42.0.0

@@ -1,0 +1,30 @@
+---
+# ==============================================================================
+# Role: concert_workflows
+# Tasks: Configures and verifies IBM Concert Workflows engine
+# ==============================================================================
+
+- name: Check if Concert Workflows is enabled
+  ansible.builtin.debug:
+    msg: "Configuring IBM Concert Workflows engine..."
+  when: enable_concert_workflows
+
+- name: Create Concert Workflows ConfigMap
+  kubernetes.core.k8s:
+    api_version: v1
+    kind: ConfigMap
+    name: ibm-concert-workflows-config
+    namespace: "{{ concert_namespace }}"
+    state: present
+    definition:
+      metadata:
+        name: ibm-concert-workflows-config
+        namespace: "{{ concert_namespace }}"
+        labels:
+          app.kubernetes.io/part-of: ibm-concert
+          app.kubernetes.io/component: workflows
+      data:
+        WORKFLOW_RUNNER_ENABLED: "true"
+        AUTOMATION_QUEUE_CONCURRENCY: "5"
+        EXECUTION_MODE: "kubernetes"
+  when: enable_concert_workflows

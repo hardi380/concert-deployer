@@ -1,0 +1,45 @@
+---
+# ==============================================================================
+# Playbook: uninstall_concert.yml
+# Description: Cleans up IBM Concert resources and namespace from OpenShift.
+# ==============================================================================
+
+- name: Uninstall IBM Concert from OpenShift
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Prompt for confirmation
+      ansible.builtin.debug:
+        msg: "Initiating deletion of IBM Concert resources in namespace: {{ concert_namespace }}"
+
+    - name: Delete IBM Concert Setup Job
+      kubernetes.core.k8s:
+        api_version: batch/v1
+        kind: Job
+        name: ibm-concert-setup-job
+        namespace: "{{ concert_namespace }}"
+        state: absent
+      ignore_errors: true
+
+    - name: Delete IBM Concert Route
+      kubernetes.core.k8s:
+        api_version: route.openshift.io/v1
+        kind: Route
+        name: ibm-concert-ui
+        namespace: "{{ concert_namespace }}"
+        state: absent
+      ignore_errors: true
+
+    - name: Delete IBM Concert Namespace and all contained resources
+      kubernetes.core.k8s:
+        api_version: v1
+        kind: Namespace
+        name: "{{ concert_namespace }}"
+        state: absent
+        wait: true
+        wait_timeout: 300
+
+    - name: Completion message
+      ansible.builtin.debug:
+        msg: "IBM Concert uninstallation completed. Namespace {{ concert_namespace }} removed."

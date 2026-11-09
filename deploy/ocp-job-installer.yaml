@@ -1,0 +1,173 @@
+---
+# ==============================================================================
+# IBM CONCERT AUTOMATED OPENSHIFT DEPLOYER (Single YAML Manifest)
+# ==============================================================================
+# Instructions:
+# 1. Edit the Secret and ConfigMap below with your IBM Entitlement Key & settings.
+# 2. Paste this entire file into OpenShift Web Console (Click '+' in top bar)
+#    or run: oc apply -f ocp-job-installer.yaml
+# 3. Follow the installation progress with:
+#    oc logs -f job/ibm-concert-deployer -n ibm-concert-installer
+# ==============================================================================
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ibm-concert-installer
+  labels:
+    app.kubernetes.io/name: ibm-concert-deployer
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: concert-deployer-credentials
+  namespace: ibm-concert-installer
+type: Opaque
+stringData:
+  # ----------------------------------------------------------------------------
+  # [REQUIRED] Paste your IBM Entitlement Key below:
+  # Obtain key from: https://myibm.ibm.com/products-services/containerlibrary
+  # ----------------------------------------------------------------------------
+  IBM_ENTITLEMENT_KEY: "PASTE_YOUR_IBM_ENTITLEMENT_KEY_HERE"
+
+  # ----------------------------------------------------------------------------
+  # [OPTIONAL] Initial admin password for IBM Concert UI (leave empty to auto-generate)
+  # ----------------------------------------------------------------------------
+  CONCERT_ADMIN_PASSWORD: ""
+
+  # [OPTIONAL] If using a private GitHub repository for the Ansible playbooks:
+  # GIT_TOKEN: "ghp_xxxxxxxxxxxxxxxxxxxx"
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: concert-deployer-config
+  namespace: ibm-concert-installer
+data:
+  # ----------------------------------------------------------------------------
+  # GitHub Repository containing the Ansible Playbooks
+  # Update this with your published GitHub repository URL:
+  # ----------------------------------------------------------------------------
+  GIT_REPO_URL: "https://github.com/your-org/concert-deployer.git"
+  GIT_BRANCH: "main"
+
+  # Target OpenShift Namespace where IBM Concert will be installed
+  CONCERT_NAMESPACE: "ibm-concert"
+
+  # IBM Concert Version to install
+  CONCERT_VERSION: "3.1.0"
+  CONCERT_LICENSE_ACCEPT: "true"
+
+  # Components to install together:
+  ENABLE_PROTECT: "true"
+  ENABLE_WORKFLOWS: "true"
+  ENABLE_DATAAPPS: "true"
+
+  # StorageClass configuration (Leave empty for automatic cluster detection):
+  # RWO Examples: ocs-storagecluster-ceph-rbd, gp3-csi, managed-csi, topolvm-provisioner
+  # RWX Examples: ocs-storagecluster-cephfs, nfs-client, efs-sc, azurefile-csi
+  STORAGE_CLASS_RWO: ""
+  STORAGE_CLASS_RWX: ""
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: concert-deployer-sa
+  namespace: ibm-concert-installer
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: concert-deployer-cluster-admin
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+  - kind: ServiceAccount
+    name: concert-deployer-sa
+    namespace: ibm-concert-installer
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ibm-concert-deployer
+  namespace: ibm-concert-installer
+  labels:
+    app.kubernetes.io/name: ibm-concert-deployer
+spec:
+  backoffLimit: 2
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ibm-concert-deployer
+    spec:
+      serviceAccountName: concert-deployer-sa
+      restartPolicy: Never
+      containers:
+        - name: ansible-runner
+          image: registry.redhat.io/ubi9/ubi-minimal:latest
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - secretRef:
+                name: concert-deployer-credentials
+            - configMapRef:
+                name: concert-deployer-config
+          command:
+            - /bin/bash
+            - -c
+            - |
+              set -e
+              echo "===================================================================="
+              echo "  IBM Concert Automated Installer on OpenShift"
+              echo "===================================================================="
+              echo "Installing prerequisites and system packages..."
+              microdnf install -y git python3 python3-pip tar gzip jq shadow-utils
+
+              echo "Installing Python dependencies and Ansible..."
+              python3 -m pip install --no-cache-dir --upgrade pip
+              python3 -m pip install --no-cache-dir ansible-core kubernetes openshift pyyaml jmespath requests urllib3 cryptography
+
+              echo "Installing required Ansible collections..."
+              ansible-galaxy collection install kubernetes.core community.general redhat.openshift
+
+              WORKSPACE_DIR="/tmp/concert-deployer"
+              rm -rf "${WORKSPACE_DIR}"
+              mkdir -p "${WORKSPACE_DIR}"
+
+              echo "Cloning Ansible automation repository: ${GIT_REPO_URL} (${GIT_BRANCH})..."
+              if [ -n "${GIT_TOKEN}" ]; then
+                REPO_AUTH_URL=$(echo "${GIT_REPO_URL}" | sed -E "s#(https://)#\1oauth2:${GIT_TOKEN}@#")
+                git clone -b "${GIT_BRANCH}" "${REPO_AUTH_URL}" "${WORKSPACE_DIR}"
+              else
+                git clone -b "${GIT_BRANCH}" "${GIT_REPO_URL}" "${WORKSPACE_DIR}"
+              fi
+
+              cd "${WORKSPACE_DIR}"
+
+              echo "===================================================================="
+              echo "Executing Ansible Playbook: install_concert.yml"
+              echo "===================================================================="
+              ansible-playbook -i inventory/localhost.yml playbooks/install_concert.yml
+
+              echo "===================================================================="
+              echo "  IBM Concert Installation Execution Finished Successfully!         "
+              echo "===================================================================="
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "512Mi"
+            limits:
+              cpu: "2000m"
+              memory: "2048Mi"
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL

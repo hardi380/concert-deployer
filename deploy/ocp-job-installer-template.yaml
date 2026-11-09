@@ -1,0 +1,130 @@
+---
+apiVersion: template.openshift.io/v1
+kind: Template
+metadata:
+  name: ibm-concert-installer-template
+  annotations:
+    description: "Automated Ansible-based installer for IBM Concert (Protect, Workflows, DataApps) on OpenShift"
+    iconClass: "icon-rh-integration"
+    tags: "ibm,concert,security,protect,workflows,dataapps,ansible"
+parameters:
+  - name: IBM_ENTITLEMENT_KEY
+    description: "IBM Entitlement API Key obtained from MyIBM Container Library"
+    required: true
+  - name: GIT_REPO_URL
+    description: "Git repository URL containing the Concert Deployer Ansible playbooks"
+    value: "https://github.com/your-org/concert-deployer.git"
+    required: true
+  - name: GIT_BRANCH
+    description: "Git Branch to checkout"
+    value: "main"
+    required: true
+  - name: CONCERT_NAMESPACE
+    description: "Target Namespace where IBM Concert will be deployed"
+    value: "ibm-concert"
+    required: true
+  - name: CONCERT_VERSION
+    description: "IBM Concert release version"
+    value: "3.1.0"
+    required: true
+  - name: ENABLE_PROTECT
+    description: "Enable IBM Concert Protect component"
+    value: "true"
+    required: true
+  - name: ENABLE_WORKFLOWS
+    description: "Enable IBM Concert Workflows component"
+    value: "true"
+    required: true
+  - name: ENABLE_DATAAPPS
+    description: "Enable IBM Concert DataApps component"
+    value: "true"
+    required: true
+  - name: STORAGE_CLASS_RWO
+    description: "Block/RWO StorageClass (Leave empty for auto-detection)"
+    value: ""
+  - name: STORAGE_CLASS_RWX
+    description: "File/RWX StorageClass (Leave empty for auto-detection)"
+    value: ""
+  - name: CONCERT_ADMIN_PASSWORD
+    description: "Initial administrator password for Concert UI (Leave blank to generate secure random password)"
+    value: ""
+
+objects:
+  - apiVersion: v1
+    kind: Namespace
+    metadata:
+      name: ibm-concert-installer
+  - apiVersion: v1
+    kind: Secret
+    metadata:
+      name: concert-deployer-credentials
+      namespace: ibm-concert-installer
+    type: Opaque
+    stringData:
+      IBM_ENTITLEMENT_KEY: "${IBM_ENTITLEMENT_KEY}"
+      CONCERT_ADMIN_PASSWORD: "${CONCERT_ADMIN_PASSWORD}"
+  - apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: concert-deployer-config
+      namespace: ibm-concert-installer
+    data:
+      GIT_REPO_URL: "${GIT_REPO_URL}"
+      GIT_BRANCH: "${GIT_BRANCH}"
+      CONCERT_NAMESPACE: "${CONCERT_NAMESPACE}"
+      CONCERT_VERSION: "${CONCERT_VERSION}"
+      ENABLE_PROTECT: "${ENABLE_PROTECT}"
+      ENABLE_WORKFLOWS: "${ENABLE_WORKFLOWS}"
+      ENABLE_DATAAPPS: "${ENABLE_DATAAPPS}"
+      STORAGE_CLASS_RWO: "${STORAGE_CLASS_RWO}"
+      STORAGE_CLASS_RWX: "${STORAGE_CLASS_RWX}"
+      CONCERT_LICENSE_ACCEPT: "true"
+  - apiVersion: v1
+    kind: ServiceAccount
+    metadata:
+      name: concert-deployer-sa
+      namespace: ibm-concert-installer
+  - apiVersion: rbac.authorization.k8s.io/v1
+    kind: ClusterRoleBinding
+    metadata:
+      name: concert-deployer-cluster-admin
+    roleRef:
+      apiGroup: rbac.authorization.k8s.io
+      kind: ClusterRole
+      name: cluster-admin
+    subjects:
+      - kind: ServiceAccount
+        name: concert-deployer-sa
+        namespace: ibm-concert-installer
+  - apiVersion: batch/v1
+    kind: Job
+    metadata:
+      name: ibm-concert-deployer
+      namespace: ibm-concert-installer
+    spec:
+      backoffLimit: 2
+      template:
+        spec:
+          serviceAccountName: concert-deployer-sa
+          restartPolicy: Never
+          containers:
+            - name: ansible-runner
+              image: registry.redhat.io/ubi9/ubi-minimal:latest
+              envFrom:
+                - secretRef:
+                    name: concert-deployer-credentials
+                - configMapRef:
+                    name: concert-deployer-config
+              command:
+                - /bin/bash
+                - -c
+                - |
+                  set -e
+                  microdnf install -y git python3 python3-pip tar gzip jq
+                  python3 -m pip install --no-cache-dir ansible-core kubernetes openshift pyyaml requests
+                  ansible-galaxy collection install kubernetes.core community.general redhat.openshift
+                  WORKSPACE_DIR="/tmp/concert-deployer"
+                  mkdir -p "${WORKSPACE_DIR}"
+                  git clone -b "${GIT_BRANCH}" "${GIT_REPO_URL}" "${WORKSPACE_DIR}"
+                  cd "${WORKSPACE_DIR}"
+                  ansible-playbook -i inventory/localhost.yml playbooks/install_concert.yml

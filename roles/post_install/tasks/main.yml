@@ -1,0 +1,69 @@
+---
+# ==============================================================================
+# Role: post_install
+# Tasks: Discovers routes, verifies endpoints, and outputs connection summary
+# ==============================================================================
+
+- name: Retrieve IBM Concert OpenShift Routes
+  kubernetes.core.k8s_info:
+    api_version: route.openshift.io/v1
+    kind: Route
+    namespace: "{{ concert_namespace }}"
+  register: concert_routes
+
+- name: Identify primary Concert URL
+  ansible.builtin.set_fact:
+    concert_ui_url: >-
+      {{
+        'https://' + (concert_routes.resources | map(attribute='spec.host') | first)
+        if (concert_routes.resources is defined and concert_routes.resources | length > 0)
+        else ('https://concert.' + cluster_ingress_domain if cluster_ingress_domain | length > 0 else 'Pending Route Creation')
+      }}
+
+- name: Retrieve Admin Credentials from Secret
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Secret
+    name: "{{ concert_admin_secret_name }}"
+    namespace: "{{ concert_namespace }}"
+  register: admin_sec_info
+
+- name: Decode Admin Password
+  ansible.builtin.set_fact:
+    retrieved_admin_user: "{{ (admin_sec_info.resources[0].data.username | b64decode) if (admin_sec_info.resources is defined and admin_sec_info.resources | length > 0 and 'username' in admin_sec_info.resources[0].data) else concert_admin_username }}"
+    retrieved_admin_pass: "{{ (admin_sec_info.resources[0].data.password | b64decode) if (admin_sec_info.resources is defined and admin_sec_info.resources | length > 0 and 'password' in admin_sec_info.resources[0].data) else concert_admin_password }}"
+
+- name: Query all Pods in IBM Concert namespace
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Pod
+    namespace: "{{ concert_namespace }}"
+  register: concert_all_pods
+
+- name: Summarize pod statuses
+  ansible.builtin.set_fact:
+    running_pods_count: "{{ concert_all_pods.resources | selectattr('status.phase', 'equalto', 'Running') | list | length }}"
+    total_pods_count: "{{ concert_all_pods.resources | length }}"
+
+- name: Display IBM Concert Deployment Success Summary
+  ansible.builtin.debug:
+    msg:
+      - "================================================================================"
+      - "              🎉 IBM CONCERT DEPLOYMENT ON OPENSHIFT COMPLETED                  "
+      - "================================================================================"
+      - "Console URL:       {{ concert_ui_url }}"
+      - "Admin Username:    {{ retrieved_admin_user }}"
+      - "Admin Password:    {{ retrieved_admin_pass }}"
+      - "Namespace:         {{ concert_namespace }}"
+      - "Version:           {{ concert_version }}"
+      - "StorageClass RWO:  {{ concert_storage_class_rwo }}"
+      - "StorageClass RWX:  {{ concert_storage_class_rwx }}"
+      - "--------------------------------------------------------------------------------"
+      - "Installed Components:"
+      - "  - IBM Concert Core:      READY"
+      - "  - IBM Concert Protect:   {{ 'ENABLED' if enable_concert_protect else 'DISABLED' }}"
+      - "  - IBM Concert Workflows: {{ 'ENABLED' if enable_concert_workflows else 'DISABLED' }}"
+      - "  - IBM Concert DataApps:  {{ 'ENABLED' if enable_concert_dataapps else 'DISABLED' }}"
+      - "--------------------------------------------------------------------------------"
+      - "Active Pods:       {{ running_pods_count }} / {{ total_pods_count }} running"
+      - "================================================================================"

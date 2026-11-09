@@ -1,0 +1,135 @@
+---
+# ==============================================================================
+# Role: prerequisites
+# Tasks: Validates cluster environment, namespaces, storage, and ingress domain
+# ==============================================================================
+
+- name: Validate IBM Entitlement Key is provided
+  ansible.builtin.fail:
+    msg: >
+      IBM Entitlement Key is required. Please set the 'IBM_ENTITLEMENT_KEY' environment
+      variable or define 'ibm_entitlement_key' in your configuration. You can obtain your key
+      from https://myibm.ibm.com/products-services/containerlibrary
+  when: ibm_entitlement_key | length == 0
+
+- name: Validate license acceptance
+  ansible.builtin.fail:
+    msg: "You must accept the IBM Concert license by setting CONCERT_LICENSE_ACCEPT=true"
+  when: not concert_license_accept
+
+- name: Retrieve OpenShift Ingress Cluster configuration
+  kubernetes.core.k8s_info:
+    api_version: config.openshift.io/v1
+    kind: Ingress
+    name: cluster
+  register: ocp_ingress_info
+  ignore_errors: true
+
+- name: Set cluster ingress domain from OpenShift configuration if not provided
+  ansible.builtin.set_fact:
+    cluster_ingress_domain: "{{ ocp_ingress_info.resources[0].spec.domain }}"
+  when:
+    - cluster_ingress_domain | length == 0
+    - ocp_ingress_info.resources is defined
+    - ocp_ingress_info.resources | length > 0
+
+- name: Discover available StorageClasses
+  kubernetes.core.k8s_info:
+    api_version: storage.k8s.io/v1
+    kind: StorageClass
+  register: discovered_sc
+
+- name: Inspect discovered StorageClasses
+  ansible.builtin.set_fact:
+    sc_names: "{{ discovered_sc.resources | map(attribute='metadata.name') | list }}"
+    default_sc_name: >-
+      {{
+        discovered_sc.resources
+        | selectattr('metadata.annotations', 'defined')
+        | selectattr('metadata.annotations.storageclass.kubernetes.io/is-default-class', 'defined')
+        | selectattr('metadata.annotations.storageclass.kubernetes.io/is-default-class', 'equalto', 'true')
+        | map(attribute='metadata.name')
+        | first | default('', true)
+      }}
+
+- name: Auto-determine RWO StorageClass
+  ansible.builtin.set_fact:
+    concert_storage_class_rwo: >-
+      {{
+        concert_storage_class_rwo if (concert_storage_class_rwo | length > 0)
+        else ('ocs-storagecluster-ceph-rbd' if 'ocs-storagecluster-ceph-rbd' in sc_names
+        else ('gp3-csi' if 'gp3-csi' in sc_names
+        else ('managed-csi' if 'managed-csi' in sc_names
+        else ('topolvm-provisioner' if 'topolvm-provisioner' in sc_names
+        else default_sc_name))))
+      }}
+
+- name: Auto-determine RWX StorageClass
+  ansible.builtin.set_fact:
+    concert_storage_class_rwx: >-
+      {{
+        concert_storage_class_rwx if (concert_storage_class_rwx | length > 0)
+        else ('ocs-storagecluster-cephfs' if 'ocs-storagecluster-cephfs' in sc_names
+        else ('nfs-client' if 'nfs-client' in sc_names
+        else ('efs-sc' if 'efs-sc' in sc_names
+        else ('azurefile-csi' if 'azurefile-csi' in sc_names
+        else concert_storage_class_rwo))))
+      }}
+
+- name: Fail if no suitable StorageClass was found
+  ansible.builtin.fail:
+    msg: "No StorageClass could be detected on the cluster. Please specify STORAGE_CLASS_RWO and STORAGE_CLASS_RWX explicitly."
+  when: concert_storage_class_rwo | length == 0
+
+- name: Display environment pre-flight summary
+  ansible.builtin.debug:
+    msg:
+      - "Target Namespace: {{ concert_namespace }}"
+      - "Cluster Ingress Domain: {{ cluster_ingress_domain | default('Auto-detected via Routes', true) }}"
+      - "StorageClass (RWO): {{ concert_storage_class_rwo }}"
+      - "StorageClass (RWX): {{ concert_storage_class_rwx }}"
+      - "Concert Protect Enabled: {{ enable_concert_protect }}"
+      - "Concert Workflows Enabled: {{ enable_concert_workflows }}"
+      - "Concert DataApps Enabled: {{ enable_concert_dataapps }}"
+
+- name: Ensure target OpenShift Namespace exists
+  kubernetes.core.k8s:
+    api_version: v1
+    kind: Namespace
+    name: "{{ concert_namespace }}"
+    state: present
+    definition:
+      metadata:
+        name: "{{ concert_namespace }}"
+        labels:
+          openshift.io/cluster-monitoring: "true"
+          app.kubernetes.io/part-of: ibm-concert
+
+- name: Ensure ServiceAccount for IBM Concert exists
+  kubernetes.core.k8s:
+    api_version: v1
+    kind: ServiceAccount
+    name: ibm-concert-sa
+    namespace: "{{ concert_namespace }}"
+    state: present
+
+- name: Bind anyuid SCC to ServiceAccount on OpenShift
+  kubernetes.core.k8s:
+    api_version: rbac.authorization.k8s.io/v1
+    kind: RoleBinding
+    name: ibm-concert-anyuid-rb
+    namespace: "{{ concert_namespace }}"
+    state: present
+    definition:
+      metadata:
+        name: ibm-concert-anyuid-rb
+        namespace: "{{ concert_namespace }}"
+      roleRef:
+        apiGroup: rbac.authorization.k8s.io
+        kind: ClusterRole
+        name: system:openshift:scc:anyuid
+      subjects:
+        - kind: ServiceAccount
+          name: ibm-concert-sa
+          namespace: "{{ concert_namespace }}"
+  ignore_errors: true

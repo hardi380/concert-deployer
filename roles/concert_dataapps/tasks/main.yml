@@ -1,0 +1,30 @@
+---
+# ==============================================================================
+# Role: concert_dataapps
+# Tasks: Configures and verifies IBM Concert DataApps modules
+# ==============================================================================
+
+- name: Check if Concert DataApps is enabled
+  ansible.builtin.debug:
+    msg: "Configuring IBM Concert DataApps components..."
+  when: enable_concert_dataapps
+
+- name: Create Concert DataApps ConfigMap
+  kubernetes.core.k8s:
+    api_version: v1
+    kind: ConfigMap
+    name: ibm-concert-dataapps-config
+    namespace: "{{ concert_namespace }}"
+    state: present
+    definition:
+      metadata:
+        name: ibm-concert-dataapps-config
+        namespace: "{{ concert_namespace }}"
+        labels:
+          app.kubernetes.io/part-of: ibm-concert
+          app.kubernetes.io/component: dataapps
+      data:
+        DATAAPPS_INGESTION_ENABLED: "true"
+        TOPOLOGY_MAPPING_ENABLED: "true"
+        INTEGRATION_SYNC_INTERVAL: "300"
+  when: enable_concert_dataapps

@@ -1,0 +1,48 @@
+---
+# ==============================================================================
+# IBM Concert Automated Deployment Configuration
+# Targets OpenShift (OCP) with Concert Protect, Workflows, and DataApps
+# ==============================================================================
+
+# Target OpenShift Namespace
+concert_namespace: "{{ lookup('env', 'CONCERT_NAMESPACE') | default('ibm-concert', true) }}"
+
+# IBM Entitlement Credentials
+ibm_entitlement_key: "{{ lookup('env', 'IBM_ENTITLEMENT_KEY') | default('', true) }}"
+ibm_entitlement_user: "{{ lookup('env', 'IBM_ENTITLEMENT_USER') | default('cp', true) }}"
+ibm_entitlement_email: "{{ lookup('env', 'IBM_ENTITLEMENT_EMAIL') | default('admin@ibm.com', true) }}"
+ibm_registry_host: "cp.icr.io"
+ibm_registry_secret_name: "ibm-entitlement-key"
+
+# IBM Concert Image and Version Configuration
+concert_version: "{{ lookup('env', 'CONCERT_VERSION') | default('3.1.0', true) }}"
+concert_image_registry: "{{ lookup('env', 'CONCERT_REGISTRY') | default('cp.icr.io/cp/concert', true) }}"
+concert_manage_image: "{{ lookup('env', 'CONCERT_MANAGE_IMAGE') | default('cp.icr.io/cp/concert/ibm-concert-manage:latest', true) }}"
+concert_license_accept: "{{ lookup('env', 'CONCERT_LICENSE_ACCEPT') | default('true', true) | bool }}"
+
+# Admin Credentials
+concert_admin_username: "{{ lookup('env', 'CONCERT_ADMIN_USERNAME') | default('concert-admin', true) }}"
+concert_admin_password: "{{ lookup('env', 'CONCERT_ADMIN_PASSWORD') | default('', true) }}"
+concert_admin_secret_name: "concert-admin-credentials"
+
+# Storage Configuration
+# If left empty, the playbook auto-detects default StorageClasses from OpenShift
+concert_storage_class_rwo: "{{ lookup('env', 'STORAGE_CLASS_RWO') | default('', true) }}"
+concert_storage_class_rwx: "{{ lookup('env', 'STORAGE_CLASS_RWX') | default('', true) }}"
+
+# Component Selection
+# Allows installing Concert Protect, Workflows, and DataApps together
+enable_concert_protect: "{{ lookup('env', 'ENABLE_PROTECT') | default('true', true) | bool }}"
+enable_concert_workflows: "{{ lookup('env', 'ENABLE_WORKFLOWS') | default('true', true) | bool }}"
+enable_concert_dataapps: "{{ lookup('env', 'ENABLE_DATAAPPS') | default('true', true) | bool }}"
+
+# Deployment Mode & Options
+# Supported modes: 'cli_runner' (runs ibm-concert-manage container orchestration) or 'native_k8s'
+concert_install_mode: "{{ lookup('env', 'CONCERT_INSTALL_MODE') | default('cli_runner', true) }}"
+
+# Timeouts & Retries
+concert_pod_wait_timeout: 1800  # 30 minutes for all pods and migrations
+concert_check_interval: 15     # seconds between status checks
+
+# OpenShift Ingress Domain (auto-discovered if empty)
+cluster_ingress_domain: "{{ lookup('env', 'CLUSTER_INGRESS_DOMAIN') | default('', true) }}"

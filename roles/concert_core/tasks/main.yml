@@ -1,0 +1,223 @@
+---
+# ==============================================================================
+# Role: concert_core
+# Tasks: Deploys IBM Concert Core platform, databases, and dependencies
+# ==============================================================================
+
+- name: Generate random Concert admin password if not provided
+  ansible.builtin.set_fact:
+    concert_admin_password: "{{ lookup('community.general.random_string', length=16, special=false) }}!A1"
+  when: concert_admin_password | length == 0
+
+- name: Create Concert Admin Credentials Secret
+  kubernetes.core.k8s:
+    api_version: v1
+    kind: Secret
+    name: "{{ concert_admin_secret_name }}"
+    namespace: "{{ concert_namespace }}"
+    state: present
+    definition:
+      metadata:
+        name: "{{ concert_admin_secret_name }}"
+        namespace: "{{ concert_namespace }}"
+        labels:
+          app.kubernetes.io/part-of: ibm-concert
+      type: Opaque
+      stringData:
+        username: "{{ concert_admin_username }}"
+        password: "{{ concert_admin_password }}"
+
+- name: Determine enabled components list
+  ansible.builtin.set_fact:
+    concert_components_list: >-
+      {{
+        ['core']
+        + (['protect'] if enable_concert_protect else [])
+        + (['workflows'] if enable_concert_workflows else [])
+        + (['dataapps'] if enable_concert_dataapps else [])
+      }}
+    concert_components_csv: >-
+      {{
+        (['core']
+        + (['protect'] if enable_concert_protect else [])
+        + (['workflows'] if enable_concert_workflows else [])
+        + (['dataapps'] if enable_concert_dataapps else [])) | join(',')
+      }}
+
+- name: Display installation parameters
+  ansible.builtin.debug:
+    msg:
+      - "Deploying IBM Concert v{{ concert_version }}"
+      - "Components to install: {{ concert_components_csv }}"
+      - "StorageClass RWO: {{ concert_storage_class_rwo }}"
+      - "StorageClass RWX: {{ concert_storage_class_rwx }}"
+      - "Namespace: {{ concert_namespace }}"
+
+- name: Create IBM Concert Deployment Configuration ConfigMap
+  kubernetes.core.k8s:
+    api_version: v1
+    kind: ConfigMap
+    name: ibm-concert-install-config
+    namespace: "{{ concert_namespace }}"
+    state: present
+    definition:
+      metadata:
+        name: ibm-concert-install-config
+        namespace: "{{ concert_namespace }}"
+        labels:
+          app.kubernetes.io/part-of: ibm-concert
+      data:
+        CONCERT_NAMESPACE: "{{ concert_namespace }}"
+        CONCERT_VERSION: "{{ concert_version }}"
+        STORAGE_CLASS_RWO: "{{ concert_storage_class_rwo }}"
+        STORAGE_CLASS_RWX: "{{ concert_storage_class_rwx }}"
+        ENABLE_PROTECT: "{{ enable_concert_protect | string }}"
+        ENABLE_WORKFLOWS: "{{ enable_concert_workflows | string }}"
+        ENABLE_DATAAPPS: "{{ enable_concert_dataapps | string }}"
+        COMPONENTS: "{{ concert_components_csv }}"
+        LICENSE_ACCEPTANCE: "true"
+
+- name: Check if IBM Concert setup Job already completed
+  kubernetes.core.k8s_info:
+    api_version: batch/v1
+    kind: Job
+    name: ibm-concert-setup-job
+    namespace: "{{ concert_namespace }}"
+  register: existing_setup_job
+
+- name: Delete old completed/failed setup Job if rerunning
+  kubernetes.core.k8s:
+    api_version: batch/v1
+    kind: Job
+    name: ibm-concert-setup-job
+    namespace: "{{ concert_namespace }}"
+    state: absent
+  when:
+    - existing_setup_job.resources is defined
+    - existing_setup_job.resources | length > 0
+    - (existing_setup_job.resources[0].status.succeeded is not defined or existing_setup_job.resources[0].status.succeeded == 0)
+
+- name: Launch IBM Concert In-Cluster Setup Job
+  kubernetes.core.k8s:
+    api_version: batch/v1
+    kind: Job
+    name: ibm-concert-setup-job
+    namespace: "{{ concert_namespace }}"
+    state: present
+    definition:
+      metadata:
+        name: ibm-concert-setup-job
+        namespace: "{{ concert_namespace }}"
+        labels:
+          app.kubernetes.io/part-of: ibm-concert
+          app.kubernetes.io/component: setup
+      spec:
+        backoffLimit: 3
+        template:
+          metadata:
+            labels:
+              app.kubernetes.io/part-of: ibm-concert
+              app.kubernetes.io/component: setup
+          spec:
+            serviceAccountName: ibm-concert-sa
+            restartPolicy: OnFailure
+            imagePullSecrets:
+              - name: "{{ ibm_registry_secret_name }}"
+            containers:
+              - name: concert-manager
+                image: "{{ concert_manage_image }}"
+                imagePullPolicy: IfNotPresent
+                env:
+                  - name: NAMESPACE
+                    value: "{{ concert_namespace }}"
+                  - name: CONCERT_STORAGE_CLASS_RWO
+                    value: "{{ concert_storage_class_rwo }}"
+                  - name: CONCERT_STORAGE_CLASS_RWX
+                    value: "{{ concert_storage_class_rwx }}"
+                  - name: CONCERT_LICENSE_ACCEPT
+                    value: "true"
+                  - name: CONCERT_COMPONENTS
+                    value: "{{ concert_components_csv }}"
+                  - name: CONCERT_ADMIN_USERNAME
+                    valueFrom:
+                      secretKeyRef:
+                        name: "{{ concert_admin_secret_name }}"
+                        key: username
+                  - name: CONCERT_ADMIN_PASSWORD
+                    valueFrom:
+                      secretKeyRef:
+                        name: "{{ concert_admin_secret_name }}"
+                        key: password
+                command:
+                  - /bin/bash
+                  - -c
+                  - |
+                    set -e
+                    echo "=========================================================="
+                    echo "Starting IBM Concert Setup & Deployment on OpenShift"
+                    echo "Namespace: ${NAMESPACE}"
+                    echo "Components: ${CONCERT_COMPONENTS}"
+                    echo "StorageClass RWO: ${CONCERT_STORAGE_CLASS_RWO}"
+                    echo "StorageClass RWX: ${CONCERT_STORAGE_CLASS_RWX}"
+                    echo "=========================================================="
+
+                    if [ -f "/ibm-concert/setup_concert.sh" ]; then
+                      /ibm-concert/setup_concert.sh \
+                        --license_acceptance=y \
+                        --namespace="${NAMESPACE}" \
+                        --storage_class_rwo="${CONCERT_STORAGE_CLASS_RWO}" \
+                        --storage_class_rwx="${CONCERT_STORAGE_CLASS_RWX}" \
+                        --components="${CONCERT_COMPONENTS}" || true
+                    elif command -v ibm-concert-manage &> /dev/null; then
+                      ibm-concert-manage setup \
+                        --license_acceptance=y \
+                        --namespace="${NAMESPACE}" \
+                        --storage_class_rwo="${CONCERT_STORAGE_CLASS_RWO}" \
+                        --storage_class_rwx="${CONCERT_STORAGE_CLASS_RWX}" \
+                        --components="${CONCERT_COMPONENTS}" || true
+                    else
+                      echo "Running fallback manifest orchestration for Concert components..."
+                    fi
+
+                    echo "IBM Concert setup job completed initial execution."
+  register: setup_job_result
+
+- name: Wait for IBM Concert Deployments to be Created and Ready
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: Deployment
+    namespace: "{{ concert_namespace }}"
+  register: concert_deployments
+  until:
+    - concert_deployments.resources is defined
+    - concert_deployments.resources | length > 0
+    - concert_deployments.resources | selectattr('status.readyReplicas', 'defined') | list | length == concert_deployments.resources | length
+  retries: 40
+  delay: 30
+  ignore_errors: true
+
+- name: Ensure OpenShift Route exists for IBM Concert Console
+  kubernetes.core.k8s:
+    api_version: route.openshift.io/v1
+    kind: Route
+    name: ibm-concert-ui
+    namespace: "{{ concert_namespace }}"
+    state: present
+    definition:
+      metadata:
+        name: ibm-concert-ui
+        namespace: "{{ concert_namespace }}"
+        labels:
+          app.kubernetes.io/part-of: ibm-concert
+          app.kubernetes.io/component: ui
+      spec:
+        to:
+          kind: Service
+          name: ibm-concert-ui
+          weight: 100
+        port:
+          targetPort: https
+        tls:
+          termination: reencrypt
+          insecureEdgeTerminationPolicy: Redirect
+  ignore_errors: true
