@@ -221,17 +221,30 @@
   loop:
     - { key: "REG_USER", value: "{{ ibm_entitlement_user }}" }
     - { key: "IMAGE_REGISTRY_PREFIX", value: "cp.icr.io/cp" }
-    - { key: "HUB_NS", value: "{{ concert_namespace }}" }
+    - { key: "SKIP_DISK_SPACE_CHECK", value: "true" }
+    - { key: "SKIP_CPU_MEMORY_CHECK", value: "true" }
+    - { key: "LICENSE_ACCEPTANCE", value: "y" }
+    - { key: "HUB_NS", value: "{{ hub_namespace }}" }
+    - { key: "HUB_IMAGE_REGISTRY_SUFFIX", value: "/platform-hub" }
+    - { key: "SCALE_CONFIG_HUB", value: "level_1" }
     - { key: "STORAGE_CLASS_HUB", value: "{{ concert_storage_class_rwo }}" }
-    - { key: "INSTALL_CONCERT", value: "true" }
+    - { key: "INSTALL_CONCERT", value: "{{ 'true' if enable_concert_protect else 'false' }}" }
     - { key: "CONCERT_NS", value: "{{ concert_namespace }}" }
+    - { key: "CONCERT_IMAGE_REGISTRY_SUFFIX", value: "/concert" }
+    - { key: "SCALE_CONFIG_CONCERT", value: "level_1" }
     - { key: "STORAGE_CLASS_CONCERT", value: "{{ concert_storage_class_rwo }}" }
     - { key: "FILE_STORAGE_CLASS_CONCERT", value: "{{ concert_storage_class_rwx }}" }
+    - { key: "ENABLE_BUDDY", value: "true" }
+    - { key: "ENABLE_HPA", value: "false" }
     - { key: "INSTALL_DATAAPPS", value: "{{ 'true' if enable_concert_dataapps else 'false' }}" }
-    - { key: "DATAAPPS_NS", value: "{{ concert_namespace }}" }
+    - { key: "DATAAPPS_NS", value: "{{ dataapps_namespace }}" }
+    - { key: "DATAAPPS_IMAGE_REGISTRY_SUFFIX", value: "/concert" }
+    - { key: "SCALE_CONFIG_DATAAPPS", value: "level_1" }
     - { key: "STORAGE_CLASS_DATAAPPS", value: "{{ concert_storage_class_rwo }}" }
+    - { key: "DATAAPPS_ENABLE_HPA", value: "false" }
     - { key: "INSTALL_WORKFLOWS", value: "{{ 'true' if enable_concert_workflows else 'false' }}" }
-    - { key: "WORKFLOWS_NS", value: "ibm-concert-workflows" }
+    - { key: "WORKFLOWS_NS", value: "{{ workflows_namespace }}" }
+    - { key: "WORKFLOWS_IMAGE_REGISTRY_SUFFIX", value: "/concert" }
     - { key: "STORAGE_CLASS_WORKFLOWS", value: "{{ concert_storage_class_rwo }}" }
     - { key: "WORKFLOWS_INSTANCE_ADDRESS", value: "{{ workflows_address }}" }
 

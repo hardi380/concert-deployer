@@ -39,9 +39,7 @@
       type: kubernetes.io/dockerconfigjson
       data:
         .dockerconfigjson: "{{ docker_config_json | to_json | b64encode }}"
-  loop:
-    - "{{ concert_namespace }}"
-    - ibm-concert-workflows
+  loop: "{{ all_target_namespaces }}"
 
 - name: Link Entitlement Secret to default ServiceAccounts in namespaces
   kubernetes.core.k8s:
@@ -54,6 +52,6 @@
       imagePullSecrets:
         - name: "{{ ibm_registry_secret_name }}"
   with_nested:
-    - ["{{ concert_namespace }}", "ibm-concert-workflows"]
+    - "{{ all_target_namespaces }}"
     - ["default", "builder", "deployer", "ibm-concert-sa"]
   ignore_errors: true
