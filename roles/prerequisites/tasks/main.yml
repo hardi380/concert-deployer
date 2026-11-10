@@ -92,38 +92,44 @@
       - "Concert Workflows Enabled: {{ enable_concert_workflows }}"
       - "Concert DataApps Enabled: {{ enable_concert_dataapps }}"
 
-- name: Ensure target OpenShift Namespace exists
+- name: Ensure target OpenShift Namespaces exist
   kubernetes.core.k8s:
     api_version: v1
     kind: Namespace
-    name: "{{ concert_namespace }}"
+    name: "{{ item }}"
     state: present
     definition:
       metadata:
-        name: "{{ concert_namespace }}"
+        name: "{{ item }}"
         labels:
           openshift.io/cluster-monitoring: "true"
           app.kubernetes.io/part-of: ibm-concert
+  loop:
+    - "{{ concert_namespace }}"
+    - ibm-concert-workflows
 
-- name: Ensure ServiceAccount for IBM Concert exists
+- name: Ensure ServiceAccounts exist
   kubernetes.core.k8s:
     api_version: v1
     kind: ServiceAccount
     name: ibm-concert-sa
-    namespace: "{{ concert_namespace }}"
+    namespace: "{{ item }}"
     state: present
+  loop:
+    - "{{ concert_namespace }}"
+    - ibm-concert-workflows
 
-- name: Bind anyuid SCC to ServiceAccount on OpenShift
+- name: Bind anyuid SCC to ServiceAccounts on OpenShift
   kubernetes.core.k8s:
     api_version: rbac.authorization.k8s.io/v1
     kind: RoleBinding
     name: ibm-concert-anyuid-rb
-    namespace: "{{ concert_namespace }}"
+    namespace: "{{ item }}"
     state: present
     definition:
       metadata:
         name: ibm-concert-anyuid-rb
-        namespace: "{{ concert_namespace }}"
+        namespace: "{{ item }}"
       roleRef:
         apiGroup: rbac.authorization.k8s.io
         kind: ClusterRole
@@ -131,5 +137,11 @@
       subjects:
         - kind: ServiceAccount
           name: ibm-concert-sa
-          namespace: "{{ concert_namespace }}"
+          namespace: "{{ item }}"
+        - kind: ServiceAccount
+          name: default
+          namespace: "{{ item }}"
+  loop:
+    - "{{ concert_namespace }}"
+    - ibm-concert-workflows
   ignore_errors: true

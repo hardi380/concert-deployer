@@ -189,10 +189,13 @@
     - { key: "INSTALL_CONCERT", value: "true" }
     - { key: "CONCERT_NS", value: "{{ concert_namespace }}" }
     - { key: "STORAGE_CLASS_CONCERT", value: "{{ concert_storage_class_rwo }}" }
+    - { key: "FILE_STORAGE_CLASS_CONCERT", value: "{{ concert_storage_class_rwx }}" }
     - { key: "INSTALL_DATAAPPS", value: "{{ 'true' if enable_concert_dataapps else 'false' }}" }
     - { key: "DATAAPPS_NS", value: "{{ concert_namespace }}" }
     - { key: "STORAGE_CLASS_DATAAPPS", value: "{{ concert_storage_class_rwo }}" }
     - { key: "INSTALL_WORKFLOWS", value: "{{ 'true' if enable_concert_workflows else 'false' }}" }
+    - { key: "WORKFLOWS_NS", value: "ibm-concert-workflows" }
+    - { key: "STORAGE_CLASS_WORKFLOWS", value: "{{ concert_storage_class_rwo }}" }
     - { key: "WORKFLOWS_INSTANCE_ADDRESS", value: "{{ workflows_address }}" }
 
 - name: Display installation summary before setup execution
@@ -200,25 +203,48 @@
     msg:
       - "Package: {{ concert_pkg_url }}"
       - "Target Namespace: {{ concert_namespace }}"
-      - "StorageClass: {{ concert_storage_class_rwo }}"
+      - "StorageClass RWO: {{ concert_storage_class_rwo }}"
+      - "StorageClass RWX: {{ concert_storage_class_rwx }}"
       - "Workflows Address: {{ workflows_address }}"
       - "Admin User: {{ concert_admin_username }}"
 
 - name: Execute official IBM Concert setup script
-  ansible.builtin.command:
-    cmd: >-
-      {{ concert_install_dir }}/bin/setup
-      --license_acceptance=y
-      --username={{ concert_admin_username }}
-      --password={{ concert_admin_password }}
-      --registry_password={{ ibm_entitlement_key }}
-    chdir: "{{ concert_install_dir }}"
-  environment:
-    KUBECONFIG: "{{ '/tmp/kubeconfig' if ('/tmp/kubeconfig' is file) else (lookup('env', 'KUBECONFIG') | default('', true)) }}"
-    PATH: "/tmp/bin:/opt/app-root/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:{{ ansible_env.PATH | default(lookup('env', 'PATH')) }}"
-    SKIP_CPU_MEMORY_CHECK: "TRUE"
-  register: setup_output
-  changed_when: true
+  block:
+    - name: Run setup script
+      ansible.builtin.command:
+        cmd: >-
+          {{ concert_install_dir }}/bin/setup
+          --license_acceptance=y
+          --username={{ concert_admin_username }}
+          --password={{ concert_admin_password }}
+          --registry_password={{ ibm_entitlement_key }}
+        chdir: "{{ concert_install_dir }}"
+      environment:
+        KUBECONFIG: "{{ '/tmp/kubeconfig' if ('/tmp/kubeconfig' is file) else (lookup('env', 'KUBECONFIG') | default('', true)) }}"
+        PATH: "/tmp/bin:/opt/app-root/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:{{ ansible_env.PATH | default(lookup('env', 'PATH')) }}"
+        SKIP_CPU_MEMORY_CHECK: "TRUE"
+      register: setup_output
+      changed_when: true
+  rescue:
+    - name: Read latest installation log file
+      ansible.builtin.shell: |
+        LATEST_LOG=$(ls -t {{ concert_install_dir }}/logs/*.log 2>/dev/null | head -n 1)
+        if [ -n "$LATEST_LOG" ] && [ -f "$LATEST_LOG" ]; then
+          echo "==================== LATEST LOG: $LATEST_LOG ===================="
+          tail -n 150 "$LATEST_LOG"
+        else
+          echo "No log file found under {{ concert_install_dir }}/logs/"
+        fi
+      register: detailed_log_output
+      changed_when: false
+
+    - name: Display detailed failure log output
+      ansible.builtin.debug:
+        var: detailed_log_output.stdout_lines
+
+    - name: Fail with clear error message
+      ansible.builtin.fail:
+        msg: "IBM Concert setup failed. Review the detailed log output above."
 
 - name: Wait for IBM Concert Deployments to be Created and Ready
   kubernetes.core.k8s_info:

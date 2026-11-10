@@ -23,36 +23,37 @@
           email: "{{ ibm_entitlement_email }}"
           auth: "{{ docker_auth_string }}"
 
-- name: Create or update IBM Entitlement Secret in namespace
+- name: Create or update IBM Entitlement Secret in namespaces
   kubernetes.core.k8s:
     api_version: v1
     kind: Secret
     name: "{{ ibm_registry_secret_name }}"
-    namespace: "{{ concert_namespace }}"
+    namespace: "{{ item }}"
     state: present
     definition:
       metadata:
         name: "{{ ibm_registry_secret_name }}"
-        namespace: "{{ concert_namespace }}"
+        namespace: "{{ item }}"
         labels:
           app.kubernetes.io/part-of: ibm-concert
       type: kubernetes.io/dockerconfigjson
       data:
         .dockerconfigjson: "{{ docker_config_json | to_json | b64encode }}"
+  loop:
+    - "{{ concert_namespace }}"
+    - ibm-concert-workflows
 
-- name: Link Entitlement Secret to default ServiceAccounts in namespace
+- name: Link Entitlement Secret to default ServiceAccounts in namespaces
   kubernetes.core.k8s:
     state: patched
     api_version: v1
     kind: ServiceAccount
-    name: "{{ item }}"
-    namespace: "{{ concert_namespace }}"
+    name: "{{ item.1 }}"
+    namespace: "{{ item.0 }}"
     definition:
       imagePullSecrets:
         - name: "{{ ibm_registry_secret_name }}"
-  loop:
-    - default
-    - builder
-    - deployer
-    - ibm-concert-sa
+  with_nested:
+    - ["{{ concert_namespace }}", "ibm-concert-workflows"]
+    - ["default", "builder", "deployer", "ibm-concert-sa"]
   ignore_errors: true
