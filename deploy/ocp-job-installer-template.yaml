@@ -120,6 +120,11 @@ objects:
                 - -c
                 - |
                   set -e
+                  mkdir -p /tmp/bin
+                  if ! command -v oc &>/dev/null && ! command -v kubectl &>/dev/null; then
+                    curl -sL https://mirror.openshift.com/pub/openshift-v4/clients/ocp/stable/openshift-client-linux.tar.gz | tar -xzf - -C /tmp/bin oc kubectl || true
+                  fi
+                  export PATH="/tmp/bin:${PATH}"
                   python3 -m venv /tmp/ansible-env
                   source /tmp/ansible-env/bin/activate
                   pip install --no-cache-dir --upgrade pip

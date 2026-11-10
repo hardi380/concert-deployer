@@ -127,6 +127,13 @@ spec:
               echo "===================================================================="
               echo "  IBM Concert Automated Installer on OpenShift"
               echo "===================================================================="
+              echo "Setting up OpenShift / Kubernetes CLI tools..."
+              mkdir -p /tmp/bin
+              if ! command -v oc &>/dev/null && ! command -v kubectl &>/dev/null; then
+                curl -sL https://mirror.openshift.com/pub/openshift-v4/clients/ocp/stable/openshift-client-linux.tar.gz | tar -xzf - -C /tmp/bin oc kubectl || true
+              fi
+              export PATH="/tmp/bin:${PATH}"
+
               echo "Setting up Python virtual environment..."
               python3 -m venv /tmp/ansible-env
               source /tmp/ansible-env/bin/activate

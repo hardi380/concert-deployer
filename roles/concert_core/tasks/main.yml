@@ -1,7 +1,8 @@
 ---
 # ==============================================================================
 # Role: concert_core
-# Tasks: Deploys IBM Concert Core platform, databases, and dependencies
+# Tasks: Deploys IBM Concert 3.1.x (Core, Protect, Workflows, DataApps) on OpenShift
+#        following the official IBM Concert documentation.
 # ==============================================================================
 
 - name: Generate random Concert admin password if not provided
@@ -27,160 +28,95 @@
         username: "{{ concert_admin_username }}"
         password: "{{ concert_admin_password }}"
 
-- name: Determine enabled components list
-  ansible.builtin.set_fact:
-    concert_components_list: >-
-      {{
-        ['core']
-        + (['protect'] if enable_concert_protect else [])
-        + (['workflows'] if enable_concert_workflows else [])
-        + (['dataapps'] if enable_concert_dataapps else [])
-      }}
-    concert_components_csv: >-
-      {{
-        (['core']
-        + (['protect'] if enable_concert_protect else [])
-        + (['workflows'] if enable_concert_workflows else [])
-        + (['dataapps'] if enable_concert_dataapps else [])) | join(',')
-      }}
+- name: Prepare installation temporary directory
+  ansible.builtin.file:
+    path: /tmp/ibm-concert-installer
+    state: directory
+    mode: "0755"
 
-- name: Display installation parameters
+- name: Set download URL for IBM Concert package
+  ansible.builtin.set_fact:
+    concert_pkg_url: "https://github.com/IBM/Concert/releases/download/{{ concert_version if concert_version.startswith('v') else ('v' + concert_version) }}/ibm-concert-x86.tar.gz"
+    concert_install_dir: "/tmp/ibm-concert-installer/ibm-concert"
+
+- name: Download official IBM Concert release package
+  ansible.builtin.get_url:
+    url: "{{ concert_pkg_url }}"
+    dest: /tmp/ibm-concert-installer/ibm-concert-x86.tar.gz
+    mode: "0644"
+    timeout: 300
+
+- name: Extract IBM Concert release package
+  ansible.builtin.unarchive:
+    src: /tmp/ibm-concert-installer/ibm-concert-x86.tar.gz
+    dest: /tmp/ibm-concert-installer
+    remote_src: true
+
+- name: Ensure setup binaries have execute permissions
+  ansible.builtin.file:
+    path: "{{ item }}"
+    mode: "0755"
+  with_fileglob:
+    - "{{ concert_install_dir }}/bin/*"
+    - "{{ concert_install_dir }}/concert-hub/bin/*"
+    - "{{ concert_install_dir }}/concert-workflows/bin/*"
+    - "{{ concert_install_dir }}/dataapps/std/bin/*"
+  ignore_errors: true
+
+- name: Configure params.ini from official Kubernetes sample
+  ansible.builtin.copy:
+    src: "{{ concert_install_dir }}/etc/sample-params/concert-dataapps-workflows-k8s-params.ini"
+    dest: "{{ concert_install_dir }}/etc/params.ini"
+    remote_src: true
+    mode: "0644"
+
+- name: Determine workflows instance address
+  ansible.builtin.set_fact:
+    workflows_address: "solis-gw-ibm-concert-workflows.{{ cluster_ingress_domain }}"
+
+- name: Configure required environment parameters in params.ini
+  ansible.builtin.lineinfile:
+    path: "{{ concert_install_dir }}/etc/params.ini"
+    regexp: "^{{ item.key }}="
+    line: "{{ item.key }}={{ item.value }}"
+  loop:
+    - { key: "REG_USER", value: "{{ ibm_entitlement_user }}" }
+    - { key: "IMAGE_REGISTRY_PREFIX", value: "cp.icr.io/cp" }
+    - { key: "HUB_NS", value: "{{ concert_namespace }}" }
+    - { key: "STORAGE_CLASS_HUB", value: "{{ concert_storage_class_rwo }}" }
+    - { key: "INSTALL_CONCERT", value: "true" }
+    - { key: "CONCERT_NS", value: "{{ concert_namespace }}" }
+    - { key: "STORAGE_CLASS_CONCERT", value: "{{ concert_storage_class_rwo }}" }
+    - { key: "INSTALL_DATAAPPS", value: "{{ 'true' if enable_concert_dataapps else 'false' }}" }
+    - { key: "DATAAPPS_NS", value: "{{ concert_namespace }}" }
+    - { key: "STORAGE_CLASS_DATAAPPS", value: "{{ concert_storage_class_rwo }}" }
+    - { key: "INSTALL_WORKFLOWS", value: "{{ 'true' if enable_concert_workflows else 'false' }}" }
+    - { key: "WORKFLOWS_INSTANCE_ADDRESS", value: "{{ workflows_address }}" }
+
+- name: Display installation summary before setup execution
   ansible.builtin.debug:
     msg:
-      - "Deploying IBM Concert v{{ concert_version }}"
-      - "Components to install: {{ concert_components_csv }}"
-      - "StorageClass RWO: {{ concert_storage_class_rwo }}"
-      - "StorageClass RWX: {{ concert_storage_class_rwx }}"
-      - "Namespace: {{ concert_namespace }}"
+      - "Package: {{ concert_pkg_url }}"
+      - "Target Namespace: {{ concert_namespace }}"
+      - "StorageClass: {{ concert_storage_class_rwo }}"
+      - "Workflows Address: {{ workflows_address }}"
+      - "Admin User: {{ concert_admin_username }}"
 
-- name: Create IBM Concert Deployment Configuration ConfigMap
-  kubernetes.core.k8s:
-    api_version: v1
-    kind: ConfigMap
-    name: ibm-concert-install-config
-    namespace: "{{ concert_namespace }}"
-    state: present
-    definition:
-      metadata:
-        name: ibm-concert-install-config
-        namespace: "{{ concert_namespace }}"
-        labels:
-          app.kubernetes.io/part-of: ibm-concert
-      data:
-        CONCERT_NAMESPACE: "{{ concert_namespace }}"
-        CONCERT_VERSION: "{{ concert_version }}"
-        STORAGE_CLASS_RWO: "{{ concert_storage_class_rwo }}"
-        STORAGE_CLASS_RWX: "{{ concert_storage_class_rwx }}"
-        ENABLE_PROTECT: "{{ enable_concert_protect | string }}"
-        ENABLE_WORKFLOWS: "{{ enable_concert_workflows | string }}"
-        ENABLE_DATAAPPS: "{{ enable_concert_dataapps | string }}"
-        COMPONENTS: "{{ concert_components_csv }}"
-        LICENSE_ACCEPTANCE: "true"
-
-- name: Check if IBM Concert setup Job already completed
-  kubernetes.core.k8s_info:
-    api_version: batch/v1
-    kind: Job
-    name: ibm-concert-setup-job
-    namespace: "{{ concert_namespace }}"
-  register: existing_setup_job
-
-- name: Delete old completed/failed setup Job if rerunning
-  kubernetes.core.k8s:
-    api_version: batch/v1
-    kind: Job
-    name: ibm-concert-setup-job
-    namespace: "{{ concert_namespace }}"
-    state: absent
-  when:
-    - existing_setup_job.resources is defined
-    - existing_setup_job.resources | length > 0
-    - (existing_setup_job.resources[0].status.succeeded is not defined or existing_setup_job.resources[0].status.succeeded == 0)
-
-- name: Launch IBM Concert In-Cluster Setup Job
-  kubernetes.core.k8s:
-    api_version: batch/v1
-    kind: Job
-    name: ibm-concert-setup-job
-    namespace: "{{ concert_namespace }}"
-    state: present
-    definition:
-      metadata:
-        name: ibm-concert-setup-job
-        namespace: "{{ concert_namespace }}"
-        labels:
-          app.kubernetes.io/part-of: ibm-concert
-          app.kubernetes.io/component: setup
-      spec:
-        backoffLimit: 3
-        template:
-          metadata:
-            labels:
-              app.kubernetes.io/part-of: ibm-concert
-              app.kubernetes.io/component: setup
-          spec:
-            serviceAccountName: ibm-concert-sa
-            restartPolicy: OnFailure
-            imagePullSecrets:
-              - name: "{{ ibm_registry_secret_name }}"
-            containers:
-              - name: concert-manager
-                image: "{{ concert_manage_image }}"
-                imagePullPolicy: IfNotPresent
-                env:
-                  - name: NAMESPACE
-                    value: "{{ concert_namespace }}"
-                  - name: CONCERT_STORAGE_CLASS_RWO
-                    value: "{{ concert_storage_class_rwo }}"
-                  - name: CONCERT_STORAGE_CLASS_RWX
-                    value: "{{ concert_storage_class_rwx }}"
-                  - name: CONCERT_LICENSE_ACCEPT
-                    value: "true"
-                  - name: CONCERT_COMPONENTS
-                    value: "{{ concert_components_csv }}"
-                  - name: CONCERT_ADMIN_USERNAME
-                    valueFrom:
-                      secretKeyRef:
-                        name: "{{ concert_admin_secret_name }}"
-                        key: username
-                  - name: CONCERT_ADMIN_PASSWORD
-                    valueFrom:
-                      secretKeyRef:
-                        name: "{{ concert_admin_secret_name }}"
-                        key: password
-                command:
-                  - /bin/bash
-                  - -c
-                  - |
-                    set -e
-                    echo "=========================================================="
-                    echo "Starting IBM Concert Setup & Deployment on OpenShift"
-                    echo "Namespace: ${NAMESPACE}"
-                    echo "Components: ${CONCERT_COMPONENTS}"
-                    echo "StorageClass RWO: ${CONCERT_STORAGE_CLASS_RWO}"
-                    echo "StorageClass RWX: ${CONCERT_STORAGE_CLASS_RWX}"
-                    echo "=========================================================="
-
-                    if [ -f "/ibm-concert/setup_concert.sh" ]; then
-                      /ibm-concert/setup_concert.sh \
-                        --license_acceptance=y \
-                        --namespace="${NAMESPACE}" \
-                        --storage_class_rwo="${CONCERT_STORAGE_CLASS_RWO}" \
-                        --storage_class_rwx="${CONCERT_STORAGE_CLASS_RWX}" \
-                        --components="${CONCERT_COMPONENTS}" || true
-                    elif command -v ibm-concert-manage &> /dev/null; then
-                      ibm-concert-manage setup \
-                        --license_acceptance=y \
-                        --namespace="${NAMESPACE}" \
-                        --storage_class_rwo="${CONCERT_STORAGE_CLASS_RWO}" \
-                        --storage_class_rwx="${CONCERT_STORAGE_CLASS_RWX}" \
-                        --components="${CONCERT_COMPONENTS}" || true
-                    else
-                      echo "Running fallback manifest orchestration for Concert components..."
-                    fi
-
-                    echo "IBM Concert setup job completed initial execution."
-  register: setup_job_result
+- name: Execute official IBM Concert setup script
+  ansible.builtin.command:
+    cmd: >-
+      {{ concert_install_dir }}/bin/setup
+      --license_acceptance=y
+      --username={{ concert_admin_username }}
+      --password={{ concert_admin_password }}
+      --registry_password={{ ibm_entitlement_key }}
+    chdir: "{{ concert_install_dir }}"
+  environment:
+    KUBECONFIG: "{{ lookup('env', 'KUBECONFIG') | default('', true) }}"
+    PATH: "/tmp/bin:{{ ansible_env.PATH }}"
+    SKIP_CPU_MEMORY_CHECK: "TRUE"
+  register: setup_output
+  changed_when: true
 
 - name: Wait for IBM Concert Deployments to be Created and Ready
   kubernetes.core.k8s_info:
@@ -194,30 +130,4 @@
     - concert_deployments.resources | selectattr('status.readyReplicas', 'defined') | list | length == concert_deployments.resources | length
   retries: 40
   delay: 30
-  ignore_errors: true
-
-- name: Ensure OpenShift Route exists for IBM Concert Console
-  kubernetes.core.k8s:
-    api_version: route.openshift.io/v1
-    kind: Route
-    name: ibm-concert-ui
-    namespace: "{{ concert_namespace }}"
-    state: present
-    definition:
-      metadata:
-        name: ibm-concert-ui
-        namespace: "{{ concert_namespace }}"
-        labels:
-          app.kubernetes.io/part-of: ibm-concert
-          app.kubernetes.io/component: ui
-      spec:
-        to:
-          kind: Service
-          name: ibm-concert-ui
-          weight: 100
-        port:
-          targetPort: https
-        tls:
-          termination: reencrypt
-          insecureEdgeTerminationPolicy: Redirect
   ignore_errors: true
