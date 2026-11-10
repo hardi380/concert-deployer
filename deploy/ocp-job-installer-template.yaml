@@ -109,7 +109,7 @@ objects:
           restartPolicy: Never
           containers:
             - name: ansible-runner
-              image: registry.redhat.io/ubi9/ubi-minimal:latest
+              image: registry.access.redhat.com/ubi9/python-311:latest
               envFrom:
                 - secretRef:
                     name: concert-deployer-credentials
@@ -120,9 +120,12 @@ objects:
                 - -c
                 - |
                   set -e
-                  microdnf install -y git python3 python3-pip tar gzip jq
-                  python3 -m pip install --no-cache-dir ansible-core kubernetes openshift pyyaml requests
-                  ansible-galaxy collection install kubernetes.core community.general redhat.openshift
+                  python3 -m venv /tmp/ansible-env
+                  source /tmp/ansible-env/bin/activate
+                  pip install --no-cache-dir --upgrade pip
+                  pip install --no-cache-dir ansible-core kubernetes openshift pyyaml jmespath requests urllib3 cryptography
+                  ansible-galaxy collection install kubernetes.core community.general redhat.openshift -p /tmp/ansible-env/collections
+                  export ANSIBLE_COLLECTIONS_PATH="/tmp/ansible-env/collections"
                   WORKSPACE_DIR="/tmp/concert-deployer"
                   mkdir -p "${WORKSPACE_DIR}"
                   git clone -b "${GIT_BRANCH}" "${GIT_REPO_URL}" "${WORKSPACE_DIR}"

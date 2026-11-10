@@ -112,7 +112,7 @@ spec:
       restartPolicy: Never
       containers:
         - name: ansible-runner
-          image: registry.redhat.io/ubi9/ubi-minimal:latest
+          image: registry.access.redhat.com/ubi9/python-311:latest
           imagePullPolicy: IfNotPresent
           envFrom:
             - secretRef:
@@ -127,15 +127,17 @@ spec:
               echo "===================================================================="
               echo "  IBM Concert Automated Installer on OpenShift"
               echo "===================================================================="
-              echo "Installing prerequisites and system packages..."
-              microdnf install -y git python3 python3-pip tar gzip jq shadow-utils
+              echo "Setting up Python virtual environment..."
+              python3 -m venv /tmp/ansible-env
+              source /tmp/ansible-env/bin/activate
 
-              echo "Installing Python dependencies and Ansible..."
-              python3 -m pip install --no-cache-dir --upgrade pip
-              python3 -m pip install --no-cache-dir ansible-core kubernetes openshift pyyaml jmespath requests urllib3 cryptography
+              echo "Installing Python dependencies and Ansible Core..."
+              pip install --no-cache-dir --upgrade pip
+              pip install --no-cache-dir ansible-core kubernetes openshift pyyaml jmespath requests urllib3 cryptography
 
               echo "Installing required Ansible collections..."
-              ansible-galaxy collection install kubernetes.core community.general redhat.openshift
+              ansible-galaxy collection install kubernetes.core community.general redhat.openshift -p /tmp/ansible-env/collections
+              export ANSIBLE_COLLECTIONS_PATH="/tmp/ansible-env/collections"
 
               WORKSPACE_DIR="/tmp/concert-deployer"
               rm -rf "${WORKSPACE_DIR}"
