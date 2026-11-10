@@ -136,8 +136,7 @@ spec:
               pip install --no-cache-dir ansible-core kubernetes openshift pyyaml jmespath requests urllib3 cryptography
 
               echo "Installing required Ansible collections..."
-              ansible-galaxy collection install kubernetes.core community.general redhat.openshift -p /tmp/ansible-env/collections
-              export ANSIBLE_COLLECTIONS_PATH="/tmp/ansible-env/collections"
+              ansible-galaxy collection install kubernetes.core community.general
 
               WORKSPACE_DIR="/tmp/concert-deployer"
               rm -rf "${WORKSPACE_DIR}"
