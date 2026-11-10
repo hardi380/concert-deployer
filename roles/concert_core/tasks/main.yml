@@ -69,13 +69,13 @@
   when: oc_check.rc != 0
   ignore_errors: true
 
-- name: Link kubectl if oc downloaded
+- name: Ensure kubectl and oc are executable
   ansible.builtin.file:
-    src: /tmp/bin/oc
-    dest: /tmp/bin/kubectl
-    state: link
-    force: false
-  when: oc_check.rc != 0
+    path: "{{ item }}"
+    mode: "0755"
+  loop:
+    - /tmp/bin/kubectl
+    - /tmp/bin/oc
   ignore_errors: true
 
 - name: Check if helm exists in PATH
@@ -215,7 +215,7 @@
     chdir: "{{ concert_install_dir }}"
   environment:
     KUBECONFIG: "{{ '/tmp/kubeconfig' if ('/tmp/kubeconfig' is file) else (lookup('env', 'KUBECONFIG') | default('', true)) }}"
-    PATH: "/tmp/bin:{{ ansible_env.PATH }}"
+    PATH: "/tmp/bin:/opt/app-root/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:{{ ansible_env.PATH | default(lookup('env', 'PATH')) }}"
     SKIP_CPU_MEMORY_CHECK: "TRUE"
   register: setup_output
   changed_when: true
