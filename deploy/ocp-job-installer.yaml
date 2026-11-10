@@ -32,8 +32,9 @@ stringData:
   IBM_ENTITLEMENT_KEY: "PASTE_YOUR_IBM_ENTITLEMENT_KEY_HERE"
 
   # ----------------------------------------------------------------------------
-  # [OPTIONAL] Initial admin password for IBM Concert UI (leave empty to auto-generate)
+  # [OPTIONAL] Admin Username and Password for IBM Concert UI
   # ----------------------------------------------------------------------------
+  CONCERT_ADMIN_USERNAME: "concert-admin"
   CONCERT_ADMIN_PASSWORD: ""
 
   # [OPTIONAL] If using a private GitHub repository for the Ansible playbooks:

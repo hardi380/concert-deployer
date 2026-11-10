@@ -45,6 +45,9 @@ parameters:
   - name: STORAGE_CLASS_RWX
     description: "File/RWX StorageClass (Leave empty for auto-detection)"
     value: ""
+  - name: CONCERT_ADMIN_USERNAME
+    description: "Administrator username for Concert UI"
+    value: "concert-admin"
   - name: CONCERT_ADMIN_PASSWORD
     description: "Initial administrator password for Concert UI (Leave blank to generate secure random password)"
     value: ""
@@ -62,6 +65,7 @@ objects:
     type: Opaque
     stringData:
       IBM_ENTITLEMENT_KEY: "${IBM_ENTITLEMENT_KEY}"
+      CONCERT_ADMIN_USERNAME: "${CONCERT_ADMIN_USERNAME}"
       CONCERT_ADMIN_PASSWORD: "${CONCERT_ADMIN_PASSWORD}"
   - apiVersion: v1
     kind: ConfigMap
