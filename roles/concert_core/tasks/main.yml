@@ -103,6 +103,32 @@
   when: helm_check.rc != 0
   ignore_errors: true
 
+- name: Check if jq exists in PATH
+  ansible.builtin.command:
+    cmd: which jq
+  register: jq_check
+  failed_when: false
+  changed_when: false
+
+- name: Download jq binary if missing
+  ansible.builtin.get_url:
+    url: "https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-linux-amd64"
+    dest: /tmp/bin/jq
+    mode: "0755"
+  when: jq_check.rc != 0
+  ignore_errors: true
+
+- name: Ensure all CLI binaries in /tmp/bin are executable
+  ansible.builtin.file:
+    path: "{{ item }}"
+    mode: "0755"
+  loop:
+    - /tmp/bin/kubectl
+    - /tmp/bin/oc
+    - /tmp/bin/helm
+    - /tmp/bin/jq
+  ignore_errors: true
+
 - name: Configure In-Cluster Kubeconfig for OpenShift Job environment
   ansible.builtin.shell: |
     if [ -f "/var/run/secrets/kubernetes.io/serviceaccount/token" ]; then
@@ -163,6 +189,17 @@
     - "{{ concert_install_dir }}/concert-hub/bin/*"
     - "{{ concert_install_dir }}/concert-workflows/bin/*"
     - "{{ concert_install_dir }}/dataapps/std/bin/*"
+  ignore_errors: true
+
+- name: Extend timeouts in Hub and Keycloak wait scripts for image pulling and database init
+  ansible.builtin.replace:
+    path: "{{ item.path }}"
+    regexp: "{{ item.regexp }}"
+    replace: "{{ item.replace }}"
+  loop:
+    - { path: "{{ concert_install_dir }}/concert-hub/bin/kc-utils", regexp: "local max_attempts=60", replace: "local max_attempts=240" }
+    - { path: "{{ concert_install_dir }}/concert-hub/bin/k8s-utils.sh", regexp: "local attempts=10", replace: "local attempts=60" }
+    - { path: "{{ concert_install_dir }}/concert-hub/bin/k8s-utils.sh", regexp: "local attempts=20", replace: "local attempts=60" }
   ignore_errors: true
 
 - name: Configure params.ini from official Kubernetes sample
