@@ -273,6 +273,10 @@
         KUBECONFIG: "{{ '/tmp/kubeconfig' if ('/tmp/kubeconfig' is file) else (lookup('env', 'KUBECONFIG') | default('', true)) }}"
         PATH: "/tmp/bin:/opt/app-root/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:{{ ansible_env.PATH | default(lookup('env', 'PATH')) }}"
         SKIP_CPU_MEMORY_CHECK: "TRUE"
+        USERNAME: "{{ concert_admin_username }}"
+        PASSWORD: "{{ concert_admin_password }}"
+        DEFAULT_ADMIN_USERNAME: "{{ concert_admin_username }}"
+        DEFAULT_ADMIN_PASSWORD: "{{ concert_admin_password }}"
       register: setup_output
       changed_when: true
   rescue:
