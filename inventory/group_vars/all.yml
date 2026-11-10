@@ -15,9 +15,9 @@ ibm_registry_host: "cp.icr.io"
 ibm_registry_secret_name: "ibm-entitlement-key"
 
 # IBM Concert Image and Version Configuration
-concert_version: "{{ lookup('env', 'CONCERT_VERSION') | default('3.1.0', true) }}"
+concert_version: "{{ lookup('env', 'CONCERT_VERSION') | default('v3.1.0', true) }}"
 concert_image_registry: "{{ lookup('env', 'CONCERT_REGISTRY') | default('cp.icr.io/cp/concert', true) }}"
-concert_manage_image: "{{ lookup('env', 'CONCERT_MANAGE_IMAGE') | default('cp.icr.io/cp/concert/ibm-concert-manage:latest', true) }}"
+concert_manage_image: "{{ lookup('env', 'CONCERT_MANAGE_IMAGE') | default(concert_image_registry + '/ibm-concert-manage:' + (concert_version if concert_version.startswith('v') else ('v' + concert_version)), true) }}"
 concert_license_accept: "{{ lookup('env', 'CONCERT_LICENSE_ACCEPT') | default('true', true) | bool }}"
 
 # Admin Credentials

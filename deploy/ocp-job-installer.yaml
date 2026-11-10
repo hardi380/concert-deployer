@@ -56,8 +56,8 @@ data:
   # Target OpenShift Namespace where IBM Concert will be installed
   CONCERT_NAMESPACE: "ibm-concert"
 
-  # IBM Concert Version to install
-  CONCERT_VERSION: "3.1.0"
+  # IBM Concert Version to install (e.g. v3.1.0)
+  CONCERT_VERSION: "v3.1.0"
   CONCERT_LICENSE_ACCEPT: "true"
 
   # Components to install together:
