@@ -54,8 +54,11 @@ data:
   GIT_REPO_URL: "https://github.com/hardi380/concert-deployer.git"
   GIT_BRANCH: "main"
 
-  # Target OpenShift Namespace where IBM Concert will be installed
+  # Target OpenShift Namespaces per IBM Concert 3.1.x Documentation:
+  HUB_NAMESPACE: "ibm-concert-hub"
   CONCERT_NAMESPACE: "ibm-concert"
+  DATAAPPS_NAMESPACE: "ibm-concert-dataapps"
+  WORKFLOWS_NAMESPACE: "ibm-concert-workflows"
 
   # IBM Concert Version to install (e.g. v3.1.0)
   CONCERT_VERSION: "v3.1.0"

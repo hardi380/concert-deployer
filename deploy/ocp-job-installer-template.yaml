@@ -19,9 +19,21 @@ parameters:
     description: "Git Branch to checkout"
     value: "main"
     required: true
+  - name: HUB_NAMESPACE
+    description: "OpenShift namespace for IBM Concert Hub"
+    value: "ibm-concert-hub"
+    required: true
   - name: CONCERT_NAMESPACE
-    description: "Target Namespace where IBM Concert will be deployed"
+    description: "OpenShift namespace for IBM Concert Core"
     value: "ibm-concert"
+    required: true
+  - name: DATAAPPS_NAMESPACE
+    description: "OpenShift namespace for IBM Concert DataApps"
+    value: "ibm-concert-dataapps"
+    required: true
+  - name: WORKFLOWS_NAMESPACE
+    description: "OpenShift namespace for IBM Concert Workflows"
+    value: "ibm-concert-workflows"
     required: true
   - name: CONCERT_VERSION
     description: "IBM Concert release version"
@@ -75,7 +87,10 @@ objects:
     data:
       GIT_REPO_URL: "${GIT_REPO_URL}"
       GIT_BRANCH: "${GIT_BRANCH}"
+      HUB_NAMESPACE: "${HUB_NAMESPACE}"
       CONCERT_NAMESPACE: "${CONCERT_NAMESPACE}"
+      DATAAPPS_NAMESPACE: "${DATAAPPS_NAMESPACE}"
+      WORKFLOWS_NAMESPACE: "${WORKFLOWS_NAMESPACE}"
       CONCERT_VERSION: "${CONCERT_VERSION}"
       ENABLE_PROTECT: "${ENABLE_PROTECT}"
       ENABLE_WORKFLOWS: "${ENABLE_WORKFLOWS}"

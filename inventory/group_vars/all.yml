@@ -4,12 +4,12 @@
 # Targets OpenShift (OCP) with Concert Protect, Workflows, and DataApps
 # ==============================================================================
 
-# Target OpenShift Namespaces per IBM Concert Documentation
+# Target OpenShift Namespaces per IBM Concert 3.1.x Documentation
+hub_namespace: "{{ lookup('env', 'HUB_NAMESPACE') | default('ibm-concert-hub', true) }}"
 concert_namespace: "{{ lookup('env', 'CONCERT_NAMESPACE') | default('ibm-concert', true) }}"
-hub_namespace: "{{ lookup('env', 'HUB_NAMESPACE') | default(concert_namespace, true) }}"
-dataapps_namespace: "{{ lookup('env', 'DATAAPPS_NAMESPACE') | default(concert_namespace, true) }}"
+dataapps_namespace: "{{ lookup('env', 'DATAAPPS_NAMESPACE') | default('ibm-concert-dataapps', true) }}"
 workflows_namespace: "{{ lookup('env', 'WORKFLOWS_NAMESPACE') | default('ibm-concert-workflows', true) }}"
-all_target_namespaces: "{{ [concert_namespace, hub_namespace, dataapps_namespace, workflows_namespace] | unique }}"
+all_target_namespaces: "{{ [hub_namespace, concert_namespace, dataapps_namespace, workflows_namespace] | unique }}"
 
 # IBM Entitlement Credentials
 ibm_entitlement_key: "{{ lookup('env', 'IBM_ENTITLEMENT_KEY') | default('', true) }}"
